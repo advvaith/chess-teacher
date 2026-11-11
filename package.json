@@ -1,13 +1,13 @@
 {
   "name": "chess-teacher",
   "version": "1.0.0",
-  "description": "",
+  "description": "Self-hosted chess game reviewer: Stockfish analysis plus a plain-language coach that tracks your habits",
   "scripts": {
     "start": "node --env-file-if-exists=.env server.js"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "Advaith M",
+  "license": "MIT",
   "type": "module",
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",
@@ -15,5 +15,12 @@
     "express": "^5.3.0",
     "stockfish": "^19.0.1",
     "zod": "^4.6.7"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/advvaith/chess-teacher.git"
   }
 }

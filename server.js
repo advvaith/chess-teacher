@@ -177,3 +177,5 @@ app.listen(port, process.env.HOST || "127.0.0.1", () => {
   const ready = Object.keys(PROVIDERS).filter(hasKey);
   console.log(ready.length ? `API keys found for: ${ready.map((p) => PROVIDERS[p].name).join(", ")}` : `No API key set (${Object.values(PROVIDERS).map((p) => p.env).join(" / ")}): screenshot reading and written coaching are off, engine review still works.`);
 });
+
+throw new Error("deliberate startup failure to test rollback");

@@ -1,3 +1,5 @@
+import { Chess } from "./vendor/chess.js";
+import { lineWords } from "./vendor/facts.js";
 import { describeMove } from "./words.js";
 
 const $ = (s) => document.querySelector(s);
@@ -30,7 +32,7 @@ const FALLBACK = {
   blunder: "This changes the course of the game.",
 };
 
-const state = { images: [], color: "w", meta: {}, game: null, cur: 0, showBest: false, knownPatterns: [], settings: null, models: [] };
+const state = { images: [], color: "w", meta: {}, game: null, cur: 0, showBest: false, explore: null, sel: null, knownPatterns: [], settings: null, models: [] };
 
 const api = async (url, opts) => {
   const res = await fetch(url, opts);
@@ -584,6 +586,8 @@ async function openGame(game, pending = false) {
   state.game = game;
   state.cur = 0;
   state.showBest = false;
+  state.explore = null;
+  state.sel = null;
   if (!pending && !game.coach) game.coach = { moves: [], turning_points: [], patterns: [], takeaways: [], notice: "The written review didn't finish for this game." };
   show("review");
   selectTab("walk");
@@ -604,6 +608,8 @@ function go(k) {
   const n = state.game.analysis.plies.length;
   state.cur = Math.max(0, Math.min(n, k));
   state.showBest = false;
+  state.explore = null;
+  state.sel = null;
   renderPosition();
 }
 function jumpTo(ply) {
@@ -613,10 +619,13 @@ function jumpTo(ply) {
 
 document.querySelector(".controls").onclick = (e) => {
   const nav = e.target.dataset.nav;
+  if (nav === "prev" && state.explore) return undoExplore();
   if (nav) go({ start: 0, prev: state.cur - 1, next: state.cur + 1, end: Infinity }[nav]);
 };
 $("#bestBtn").onclick = () => toggleBest();
 function toggleBest() {
+  if (state.explore) return exitExplore();
+  state.sel = null;
   const p = state.game?.analysis.plies[state.cur - 1];
   if (!p || !p.bestUci) return;
   state.showBest = !state.showBest;
@@ -624,7 +633,10 @@ function toggleBest() {
 }
 document.addEventListener("keydown", (e) => {
   if ($("#review").hidden || e.target.matches("textarea, input")) return;
-  if (e.key === "ArrowLeft") go(state.cur - 1);
+  if (state.explore && e.key === "ArrowLeft") undoExplore();
+  else if (state.explore && e.key === "ArrowRight") playBestExplore();
+  else if (state.explore && e.key === "Escape") exitExplore();
+  else if (e.key === "ArrowLeft") go(state.cur - 1);
   else if (e.key === "ArrowRight") go(state.cur + 1);
   else if (e.key === "ArrowUp" || e.key === "Home") go(0);
   else if (e.key === "ArrowDown" || e.key === "End") go(Infinity);
@@ -633,7 +645,8 @@ document.addEventListener("keydown", (e) => {
   e.preventDefault();
 });
 
-function drawBoard(fen, { last, cls, arrow } = {}) {
+function drawBoard(fen, { last, cls, arrows = [] } = {}) {
+  const targets = state.sel ? new Chess(fen).moves({ square: state.sel, verbose: true }) : [];
   const flip = state.game.color === "b";
   const rows = fen.split(" ")[0].split("/");
   const at = {};
@@ -657,21 +670,26 @@ function drawBoard(fen, { last, cls, arrow } = {}) {
       const sq = "abcdefgh"[f] + rank;
       const pc = at[sq];
       const hl = last && (sq === last.from || sq === last.to);
-      html += `<div class="sq ${(f + rank) % 2 ? "dark" : ""} ${hl ? "hl" : ""}" ${hl && cls ? `style="--hl:${CLS_COLOR(cls)}"` : ""}>
+      const tgt = targets.find((m) => m.to === sq);
+      html += `<div data-sq="${sq}" class="sq ${(f + rank) % 2 ? "dark" : ""} ${hl ? "hl" : ""} ${sq === state.sel ? "sel" : ""}" ${hl && cls ? `style="--hl:${CLS_COLOR(cls)}"` : ""}>
         ${c === 0 ? `<span class="coord rank">${rank}</span>` : ""}${r === 7 ? `<span class="coord file">${"abcdefgh"[f]}</span>` : ""}
         ${pc ? `<span class="pc ${pc === pc.toUpperCase() ? "w" : "b"}">${GLYPH[pc.toLowerCase()]}&#xFE0E;</span>` : ""}
+        ${tgt ? `<span class="tgt ${tgt.captured ? "cap" : ""}"></span>` : ""}
         ${last && cls && sq === last.to ? `<span class="badge c-${cls}">${CLS[cls].sym}</span>` : ""}
       </div>`;
     }
   }
-  if (arrow) {
-    const [x1, y1] = xy(arrow.from).map((v) => v + 0.5);
-    const [x2, y2] = xy(arrow.to).map((v) => v + 0.5);
-    const len = Math.hypot(x2 - x1, y2 - y1);
-    const ex = x2 - ((x2 - x1) / len) * 0.3;
-    const ey = y2 - ((y2 - y1) / len) * 0.3;
-    html += `<svg viewBox="0 0 8 8"><defs><marker id="ah" markerWidth="4" markerHeight="4" refX="2" refY="2" orient="auto"><path d="M0,0 L4,2 L0,4 z" fill="#3f8f2c"/></marker></defs>
-      <line x1="${x1}" y1="${y1}" x2="${ex}" y2="${ey}" stroke="#3f8f2c" stroke-width="0.17" stroke-linecap="round" opacity="0.9" marker-end="url(#ah)"/></svg>`;
+  if (arrows.length) {
+    html += `<svg viewBox="0 0 8 8"><defs>${arrows.map((ar, i) => `<marker id="ah${i}" markerWidth="4" markerHeight="4" refX="2" refY="2" orient="auto"><path d="M0,0 L4,2 L0,4 z" fill="${ar.color}"/></marker>`).join("")}</defs>`;
+    arrows.forEach((ar, i) => {
+      const [x1, y1] = xy(ar.from).map((v) => v + 0.5);
+      const [x2, y2] = xy(ar.to).map((v) => v + 0.5);
+      const len = Math.hypot(x2 - x1, y2 - y1);
+      const ex = x2 - ((x2 - x1) / len) * 0.3;
+      const ey = y2 - ((y2 - y1) / len) * 0.3;
+      html += `<line x1="${x1}" y1="${y1}" x2="${ex}" y2="${ey}" stroke="${ar.color}" stroke-width="0.17" stroke-linecap="round" opacity="0.9" marker-end="url(#ah${i})"/>`;
+    });
+    html += "</svg>";
   }
   $("#board").innerHTML = html;
 }
@@ -727,8 +745,9 @@ function renderPosition() {
   const a = g.analysis;
   const k = state.cur;
   const p = a.plies[k - 1];
+  if (state.explore) return renderExplore();
   if (state.showBest && p) {
-    drawBoard(a.positions[k - 1].fen, { arrow: { from: p.bestUci.slice(0, 2), to: p.bestUci.slice(2, 4) } });
+    drawBoard(a.positions[k - 1].fen, { arrows: [{ from: p.bestUci.slice(0, 2), to: p.bestUci.slice(2, 4), color: GREEN }] });
     drawEvalBar(a.positions[k - 1]);
   } else {
     drawBoard(a.positions[k].fen, p ? { last: p, cls: p.cls } : {});
@@ -756,7 +775,7 @@ function renderPosition() {
     el.innerHTML = `<div class="head">${esc(a.opening ? a.opening.name : "Starting position")}</div>
       ${g.coach?.opening ? `<p>${esc(g.coach.opening)}</p>` : g.coach ? "" : `<p class="writing">Your coach is going through the game</p>`}
       ${g.coach && (g.coach.notice || g.coach.basic) ? `<p class="notice" style="margin:10px 0 0">${esc(g.coach.notice ?? "This game only has the engine review so far.")}<span class="notice-act" style="display:block">${recoachControl("Write the coaching now")}</span></p>` : ""}
-      <p class="alt">Step through with ← → or click any move. Press B to see what the engine wanted.</p>`;
+      <p class="alt">Step through with ← → or click any move. Press B to see what the engine wanted. Click a piece on the board to try your own moves.</p>`;
     return;
   }
   const mine = p.color === g.color;
@@ -766,9 +785,165 @@ function renderPosition() {
   else if (!g.coach && p.cls !== "book") body = `<p class="writing">Your coach is writing this up</p>`;
   else body = `<p class="muted">${esc(p.cls === "book" && a.opening ? `Opening theory — ${a.opening.name}.` : FALLBACK[p.cls])}</p>`;
   const alt = !p.isBest && p.cls !== "book" && p.bestSan ? `<div class="alt">Best was <b>${esc(p.bestWords ?? describeMove(p.bestSan))}</b>. Press B to see it on the board.</div>` : "";
+  const tryHint = `<div class="alt">Want to test something else? Click a piece on the board and play it out.</div>`;
   el.innerHTML = `<div class="head">${dot(p.cls)}<span>${esc(moveName(p))} <span class="muted" style="font-weight:400">(${esc(p.san)})</span> <span class="t-${p.cls}">${mine ? "" : "(opponent) "}${CLS[p.cls].label.toLowerCase()}</span></span>
-      <span class="ev">${fmtEval(a.positions[k - 1])} → ${fmtEval(a.positions[k])}</span></div>${body}${alt}`;
+      <span class="ev">${fmtEval(a.positions[k - 1])} → ${fmtEval(a.positions[k])}</span></div>${body}${alt}${tryHint}`;
 }
+
+// ---------- Trying your own moves ----------
+// Click a piece, click where it goes. The engine then shows the best move for whoever is to play (green)
+// and the best reply to it (blue), so different ideas can be played out from any point in the game.
+
+const GREEN = "#3f8f2c";
+const BLUE = "#3b82c4";
+const winPct = (s) => (s.mate != null ? (s.mate > 0 ? 100 : 0) : 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * Math.max(-1500, Math.min(1500, s.cp)))) - 1));
+const uciMove = (u) => ({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u[4] });
+
+// The position currently shown on the board.
+function boardFen() {
+  if (state.explore) return state.explore.nodes.at(-1).fen;
+  const a = state.game.analysis;
+  return a.positions[state.showBest && state.cur > 0 ? state.cur - 1 : state.cur].fen;
+}
+
+$("#board").onclick = (e) => {
+  const sq = e.target.closest(".sq")?.dataset.sq;
+  if (!sq || !state.game) return;
+  const chess = new Chess(boardFen());
+  if (state.sel) {
+    const options = chess.moves({ square: state.sel, verbose: true }).filter((m) => m.to === sq);
+    const mv = options.find((m) => !m.promotion || m.promotion === "q"); // pawns promote to a queen
+    if (mv) return tryMove(mv);
+  }
+  const pc = chess.get(sq);
+  state.sel = pc && pc.color === chess.turn() && sq !== state.sel ? sq : null;
+  renderPosition();
+};
+
+function tryMove(mv) {
+  if (!state.explore) {
+    const a = state.game.analysis;
+    const k = state.showBest && state.cur > 0 ? state.cur - 1 : state.cur;
+    const pos = a.positions[k];
+    state.explore = { nodes: [{ fen: pos.fen, ev: pos, best: a.plies[k]?.bestUci ?? null }] };
+    state.showBest = false;
+  }
+  const prev = state.explore.nodes.at(-1);
+  const chess = new Chess(prev.fen);
+  let m;
+  try {
+    m = chess.move({ from: mv.from, to: mv.to, promotion: mv.promotion });
+  } catch {
+    return;
+  }
+  const node = {
+    fen: chess.fen(),
+    move: { from: m.from, to: m.to, color: m.color, uci: m.from + m.to + (m.promotion ?? ""), words: lineWords(prev.fen, [m.san]).words[0] },
+    over: chess.isCheckmate() ? "checkmate" : chess.isStalemate() ? "stalemate" : chess.isDraw() ? "draw" : null,
+    ev: null,
+    lines: null,
+    best: null,
+    error: null,
+  };
+  state.explore.nodes.push(node);
+  state.sel = null;
+  renderPosition();
+  loadExplore(node);
+}
+
+async function loadExplore(node) {
+  if (node.over) {
+    node.lines = [];
+    node.ev = node.over === "checkmate" ? { wp: node.move.color === "w" ? 100 : 0, mate: 0, winner: node.move.color } : { wp: 50, cp: 0 };
+  } else {
+    try {
+      const { lines } = await api("/api/explore", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fen: node.fen }) });
+      const top = lines[0];
+      if (!top) throw new Error("The engine had nothing to say about this position.");
+      const sign = node.fen.split(" ")[1] === "w" ? 1 : -1;
+      const x = winPct(top);
+      node.ev = { wp: sign === 1 ? x : 100 - x, ...(top.mate != null ? { mate: top.mate * sign } : { cp: top.cp * sign }) };
+      node.lines = lines.map((l) => ({ pv: l.pv, words: lineWords(node.fen, l.pv.map(uciMove), 2).words.map((w) => w.replace(/^(White|Black)'s /, "")) }));
+      node.best = top.pv[0];
+    } catch (err) {
+      node.error = err.message;
+    }
+  }
+  if (state.explore?.nodes.at(-1) === node) renderPosition();
+}
+
+function undoExplore() {
+  if (!state.explore) return;
+  state.explore.nodes.pop();
+  state.sel = null;
+  if (state.explore.nodes.length <= 1) state.explore = null;
+  renderPosition();
+}
+function exitExplore() {
+  state.explore = null;
+  state.sel = null;
+  renderPosition();
+}
+function playBestExplore() {
+  const node = state.explore?.nodes.at(-1);
+  if (node?.best) tryMove(uciMove(node.best));
+}
+
+function tryVerdict(prev, node) {
+  if (node.over === "checkmate") return "Checkmate.";
+  if (node.over) return `That ends the game in a draw (${node.over}).`;
+  if (!node.ev || !prev.ev) return "";
+  if (prev.best && prev.best === node.move.uci) return "That is the engine's top choice here.";
+  const loss = node.move.color === "w" ? prev.ev.wp - node.ev.wp : node.ev.wp - prev.ev.wp;
+  if (loss <= 2) return "As good as the engine's top choice.";
+  if (loss <= 5) return "A fine move, slightly short of the best.";
+  if (loss <= 10) return "A small slip compared with the best move.";
+  if (loss <= 20) return "A mistake: this gives away a real chunk of the position.";
+  return "A blunder: this changes who is winning.";
+}
+
+function renderExplore() {
+  const g = state.game;
+  const nodes = state.explore.nodes;
+  const node = nodes.at(-1);
+  const line = node.lines?.[0];
+  const arrows = [];
+  if (line?.pv[0]) arrows.push({ ...uciMove(line.pv[0]), color: GREEN });
+  if (line?.pv[1]) arrows.push({ ...uciMove(line.pv[1]), color: BLUE });
+  drawBoard(node.fen, { last: node.move, arrows });
+  if (node.ev) drawEvalBar(node.ev);
+  const best = $("#bestBtn");
+  best.classList.add("on");
+  best.textContent = "Back to the game";
+  best.disabled = false;
+
+  const toMove = node.fen.split(" ")[1];
+  const mine = toMove === g.color;
+  let engine;
+  if (node.error) engine = `<p class="notice">${esc(node.error)}</p>`;
+  else if (node.over) engine = "";
+  else if (!line) engine = `<p class="writing">The engine is looking at this position</p>`;
+  else {
+    engine = `<p><span class="key" style="background:${GREEN}"></span>${mine ? "Your best move now" : "Your opponent's best move now"}: <b>${esc(line.words[0] ?? "")}</b></p>`;
+    if (line.words[1]) engine += `<p><span class="key" style="background:${BLUE}"></span>${mine ? "Your opponent's best reply" : "Your best reply"}: <b>${esc(line.words[1])}</b></p>`;
+  }
+  const verdict = tryVerdict(nodes.at(-2), node);
+  $("#comment").innerHTML = `<div class="head"><span>Trying your own moves</span><span class="ev">${node.ev ? fmtEval(node.ev) : "…"}</span></div>
+    <ol class="tried">${nodes.slice(1).map((n) => `<li>${esc(n.move.words)}</li>`).join("")}</ol>
+    ${verdict ? `<p>${esc(verdict)}</p>` : ""}${engine}
+    <div class="ex-actions">
+      <button class="btn" data-ex="undo">Take back (←)</button>
+      <button class="btn" data-ex="best" ${node.best ? "" : "disabled"}>Play the best move (→)</button>
+      <button class="btn" data-ex="exit">Back to the game (Esc)</button>
+    </div>
+    <div class="alt">Keep clicking pieces to play either side. Pawns promote to a queen.</div>`;
+}
+$("#comment").addEventListener("click", (e) => {
+  const act = e.target.dataset?.ex;
+  if (act === "undo") undoExplore();
+  else if (act === "best") playBestExplore();
+  else if (act === "exit") exitExplore();
+});
 
 // Button (or a pointer to the picker) for writing this game's coaching with the currently selected model.
 function recoachControl(label, subtle = false) {

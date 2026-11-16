@@ -8,6 +8,7 @@ It runs on your own machine. Stockfish does the analysis locally; the written co
 
 - **Import from chess.com.** Type your username and pick from your recent games, or tick several and review them as a batch. You can also paste a PGN or drop in a screenshot of a move list.
 - **Engine review.** Every position is evaluated by Stockfish. You get an eval bar, an eval graph, and a label on every move: book, brilliant, great, best, excellent, good, inaccuracy, mistake, miss or blunder.
+- **Try your own moves.** In the walkthrough, click a piece and play any move from any point in the game. The engine shows the best move for the side to play and the best reply to it, so you can test what would have happened.
 - **"Played like" ratings.** An accuracy score and a rough rating estimate for both players, overall and by phase of the game, shown next to the real ratings.
 - **Opening name**, from the Lichess opening tables, with the theory moves marked as book.
 - **Coach walkthrough.** A language model explains why each move was good or bad, picks out the turning points, and suggests what to work on. It writes moves in words ("your knight takes the pawn on d5"), not notation, so beginners can follow it.

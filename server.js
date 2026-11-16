@@ -1,8 +1,10 @@
 import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { Chess } from "chess.js";
 import express from "express";
 import { analyzeGame } from "./lib/analyze.js";
+import { evaluateOne } from "./lib/engine.js";
 import { ChessComError, recentGames } from "./lib/chesscom.js";
 import { basicCoach, coachGame, extractMoves } from "./lib/coach.js";
 import { moveWords } from "./lib/facts.js";
@@ -15,6 +17,9 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.use(express.json({ limit: "40mb" }));
 app.use(express.static(path.join(here, "public")));
+// The page uses the same rules library and move wording as the server.
+app.get("/vendor/chess.js", (req, res) => res.sendFile(path.join(here, "node_modules/chess.js/dist/esm/chess.js")));
+app.get("/vendor/facts.js", (req, res) => res.sendFile(path.join(here, "lib/facts.js")));
 
 // Current provider + models, falling back to the first provider that has a key.
 function currentSettings() {
@@ -166,6 +171,28 @@ app.post("/api/games/:id/coach", async (req, res) => {
     res.status(502).json({ error: describeError(err, llm.provider) });
   } finally {
     coaching.delete(game.id);
+  }
+});
+
+// Engine's view of any position, for trying out moves on the board. Scores are for the side to move.
+const explored = new Map();
+app.post("/api/explore", async (req, res) => {
+  const fen = String(req.body?.fen ?? "").slice(0, 100);
+  try {
+    if (new Chess(fen).isGameOver()) return res.json({ lines: [] });
+  } catch {
+    return res.status(400).json({ error: "That isn't a legal position." });
+  }
+  try {
+    if (!explored.has(fen)) {
+      const lines = await evaluateOne(fen);
+      if (explored.size >= 2000) explored.delete(explored.keys().next().value);
+      explored.set(fen, lines.map((l) => ({ ...(l.mate != null ? { mate: l.mate } : { cp: l.cp }), pv: l.pv.slice(0, 6) })));
+    }
+    res.json({ lines: explored.get(fen) });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "The engine couldn't look at that position." });
   }
 });
 

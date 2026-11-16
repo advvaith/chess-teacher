@@ -221,3 +221,14 @@ details#manual > p { margin: 10px 0 0; }
 .tagfail { font-size: 11px; font-weight: 700; color: #ffb4ab; background: rgba(202,52,49,.25); padding: 2px 8px; border-radius: 99px; cursor: help; }
 
 a.chip { text-decoration: none; font-weight: 500; }
+
+/* Trying your own moves on the board */
+.board .sq { cursor: pointer; }
+.sq.sel::after { content: ""; position: absolute; inset: 0; box-shadow: inset 0 0 0 0.6cqw #f5f682; }
+.sq .tgt { position: absolute; width: 30%; height: 30%; border-radius: 50%; background: #0000003d; z-index: 1; }
+.sq .tgt.cap { width: 92%; height: 92%; background: none; box-shadow: inset 0 0 0 0.8cqw #0000003d; }
+.comment .tried { margin: 8px 0 0; padding-left: 20px; color: var(--muted); font-size: 13.5px; }
+.comment .tried li:last-child { color: var(--text); font-weight: 600; }
+.comment .key { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+.ex-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.ex-actions .btn { padding: 6px 12px; font-size: 13px; }

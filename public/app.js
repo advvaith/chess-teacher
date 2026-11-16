@@ -765,7 +765,7 @@ function renderPosition() {
   if (comment) body = `<p>${esc(comment)}</p>`;
   else if (!g.coach && p.cls !== "book") body = `<p class="writing">Your coach is writing this up</p>`;
   else body = `<p class="muted">${esc(p.cls === "book" && a.opening ? `Opening theory — ${a.opening.name}.` : FALLBACK[p.cls])}</p>`;
-  const alt = !p.isBest && p.cls !== "book" && p.bestSan ? `<div class="alt">Best was <b>${esc(describeMove(p.bestSan))}</b>. Press B to see it on the board.</div>` : "";
+  const alt = !p.isBest && p.cls !== "book" && p.bestSan ? `<div class="alt">Best was <b>${esc(p.bestWords ?? describeMove(p.bestSan))}</b>. Press B to see it on the board.</div>` : "";
   el.innerHTML = `<div class="head">${dot(p.cls)}<span>${esc(moveName(p))} <span class="muted" style="font-weight:400">(${esc(p.san)})</span> <span class="t-${p.cls}">${mine ? "" : "(opponent) "}${CLS[p.cls].label.toLowerCase()}</span></span>
       <span class="ev">${fmtEval(a.positions[k - 1])} → ${fmtEval(a.positions[k])}</span></div>${body}${alt}`;
 }

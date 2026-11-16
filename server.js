@@ -7,6 +7,7 @@ import { analyzeGame } from "./lib/analyze.js";
 import { evaluateOne } from "./lib/engine.js";
 import { ChessComError, recentGames } from "./lib/chesscom.js";
 import { basicCoach, coachGame, extractMoves } from "./lib/coach.js";
+import { annotate } from "./lib/explain.js";
 import { moveWords } from "./lib/facts.js";
 import { describeError, hasKey, listModels, PROVIDERS } from "./lib/llm.js";
 import { formatMoves, parseMoves } from "./lib/moves.js";
@@ -117,6 +118,7 @@ app.post("/api/analyze", async (req, res) => {
       analysis,
       coach: null,
     };
+    annotate(game);
     saveGame(game);
     send({ type: "game", game });
 
@@ -141,6 +143,8 @@ app.get("/api/games", (req, res) => res.json(gameListing()));
 app.get("/api/games/:id", (req, res) => {
   const game = loadGame(req.params.id);
   if (!game) return res.status(404).json({ error: "Game not found" });
+  // Reviews saved before the walkthrough notes existed (or with an older version of them) get them now.
+  if (annotate(game)) saveGame(game);
   // Reviews saved before best moves were spelled out in full: fill the wording in on the way out.
   for (const p of game.analysis.plies) {
     if (p.bestSan && !p.bestWords) p.bestWords = moveWords(game.analysis.positions[p.ply - 1].fen, p.bestSan);
@@ -159,6 +163,7 @@ app.post("/api/games/:id/coach", async (req, res) => {
     const known = loadPatterns()
       .map((p) => ({ ...p, occurrences: p.occurrences.filter((o) => o.gameId !== game.id) }))
       .filter((p) => p.occurrences.length);
+    annotate(game);
     const coach = await coachGame(game, known, llm);
     // Only replace what was there once the new review has actually arrived.
     forgetGamePatterns(game.id);

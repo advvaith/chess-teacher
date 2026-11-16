@@ -12,6 +12,7 @@ const CLS = {
   excellent: { label: "Excellent", sym: "✓" },
   good: { label: "Good", sym: "○" },
   book: { label: "Book", sym: "≡" },
+  forced: { label: "Forced", sym: "→" },
   inaccuracy: { label: "Inaccuracy", sym: "?!" },
   mistake: { label: "Mistake", sym: "?" },
   miss: { label: "Miss", sym: "×" },
@@ -21,6 +22,7 @@ const CLS_COLOR = (c) => getComputedStyle(document.documentElement).getPropertyV
 const GLYPH = { k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟" };
 const FALLBACK = {
   book: "Opening theory.",
+  forced: "The only legal move.",
   brilliant: "A sacrifice the engine fully approves of.",
   great: "The one move that keeps things on track.",
   best: "The engine's top choice.",
@@ -779,12 +781,11 @@ function renderPosition() {
     return;
   }
   const mine = p.color === g.color;
-  const comment = g.coach?.moves.find((m) => m.ply === p.ply)?.comment;
+  const comment = p.note;
   let body;
   if (comment) body = `<p>${esc(comment)}</p>`;
-  else if (!g.coach && p.cls !== "book") body = `<p class="writing">Your coach is writing this up</p>`;
   else body = `<p class="muted">${esc(p.cls === "book" && a.opening ? `Opening theory — ${a.opening.name}.` : FALLBACK[p.cls])}</p>`;
-  const alt = !p.isBest && p.cls !== "book" && p.bestSan ? `<div class="alt">Best was <b>${esc(p.bestWords ?? describeMove(p.bestSan))}</b>. Press B to see it on the board.</div>` : "";
+  const alt = !p.isBest && p.cls !== "book" && p.bestSan ? `<div class="alt">${comment ? "" : `Best was <b>${esc(p.bestWords ?? describeMove(p.bestSan))}</b>. `}Press B to see the best move on the board.</div>` : "";
   const tryHint = `<div class="alt">Want to test something else? Click a piece on the board and play it out.</div>`;
   el.innerHTML = `<div class="head">${dot(p.cls)}<span>${esc(moveName(p))} <span class="muted" style="font-weight:400">(${esc(p.san)})</span> <span class="t-${p.cls}">${mine ? "" : "(opponent) "}${CLS[p.cls].label.toLowerCase()}</span></span>
       <span class="ev">${fmtEval(a.positions[k - 1])} → ${fmtEval(a.positions[k])}</span></div>${body}${alt}${tryHint}`;
@@ -992,7 +993,7 @@ function renderReview() {
   renderPosition();
 
   const c = g.coach;
-  const order = ["brilliant", "great", "best", "excellent", "good", "book", "inaccuracy", "mistake", "miss", "blunder"];
+  const order = ["brilliant", "great", "best", "excellent", "good", "book", "forced", "inaccuracy", "mistake", "miss", "blunder"];
   const phaseLine = (s) => Object.entries(s.phases).map(([ph, v]) => `${ph} ${v.accuracy}%`).join(" · ");
   const outcome = g.outcome ? { win: "You won", loss: "You lost", draw: "Draw" }[g.outcome] : "";
   $("#tab-overview").innerHTML = `

@@ -13,7 +13,7 @@ It runs on your own machine. Stockfish does the analysis locally; the written co
 - **Opening name**, from the Lichess opening tables, with the theory moves marked as book.
 - **Walkthrough comments, no model needed.** Every move gets a comment written by code from the engine's analysis and the rules of chess: hanging pieces, free captures, forks, pins, skewers, discovered attacks and double checks, trapped pieces, removing a defender, mate threats, missed and allowed forced mates, back-rank mates, stalemate, sacrifices, forced moves, plus development, castling and passed pawns. Moves are written in words ("knight from f6 takes the pawn on e4"), not notation.
 - **Game summary (optional).** A language model writes the story of the game, the turning points and what to work on.
-- **Pattern tracking.** The coach names recurring habits, strengths and weaknesses, and the same habit is tracked from game to game. A profile page adds accuracy by phase, how your errors happen, and your results by opening.
+- **Pattern tracking.** The coach names recurring habits, strengths and weaknesses, and the same habit is tracked from game to game. A profile page shows them for your recent games only (the last 10 by default, or 5, 20 or all), so a habit you fix drops off after a few clean games, and marks whether each one is showing up more or less than before. It also has accuracy by phase, how your errors happen, and your results by opening.
 
 Without an API key everything except the written coaching and screenshot reading still works.
 

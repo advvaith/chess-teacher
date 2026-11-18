@@ -233,3 +233,8 @@ a.chip { text-decoration: none; font-weight: 500; }
 .comment .key { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
 .ex-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .ex-actions .btn { padding: 6px 12px; font-size: 13px; }
+
+.profile-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+.profile-head h1, .profile-head p { margin-bottom: 0; }
+table.gone td { font-size: 13.5px; }
+table.gone td:last-child { text-align: right; white-space: nowrap; }

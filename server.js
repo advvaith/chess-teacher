@@ -12,7 +12,7 @@ import { moveWords } from "./lib/facts.js";
 import { describeError, hasKey, listModels, PROVIDERS } from "./lib/llm.js";
 import { formatMoves, parseMoves } from "./lib/moves.js";
 import { loadBook } from "./lib/openings.js";
-import { buildProfile, deleteGame, forgetGamePatterns, gameListing, loadGame, loadPatterns, loadSettings, recordPatterns, saveGame, saveSettings } from "./lib/store.js";
+import { buildProfile, deleteGame, forgetGamePatterns, gameListing, loadGame, loadSettings, patternsForCoach, recordPatterns, saveGame, saveSettings } from "./lib/store.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -124,7 +124,7 @@ app.post("/api/analyze", async (req, res) => {
 
     const llm = llmFor("coach");
     try {
-      game.coach = await coachGame(game, loadPatterns(), llm);
+      game.coach = await coachGame(game, patternsForCoach(game.id), llm);
       recordPatterns(game, game.coach.patterns);
     } catch (err) {
       console.error("coach failed:", describeError(err, llm.provider));
@@ -160,9 +160,7 @@ app.post("/api/games/:id/coach", async (req, res) => {
   const llm = llmFor("coach");
   coaching.add(game.id);
   try {
-    const known = loadPatterns()
-      .map((p) => ({ ...p, occurrences: p.occurrences.filter((o) => o.gameId !== game.id) }))
-      .filter((p) => p.occurrences.length);
+    const known = patternsForCoach(game.id);
     annotate(game);
     const coach = await coachGame(game, known, llm);
     // Only replace what was there once the new review has actually arrived.
@@ -205,7 +203,11 @@ app.delete("/api/games/:id", (req, res) => {
   deleteGame(req.params.id);
   res.json({ ok: true });
 });
-app.get("/api/profile", (req, res) => res.json(buildProfile()));
+// ?last=N looks at the N most recent games (default 10); ?last=0 looks at all of them.
+app.get("/api/profile", (req, res) => {
+  const last = Number(req.query.last);
+  res.json(Number.isInteger(last) && last >= 0 ? buildProfile(last) : buildProfile());
+});
 
 const port = Number(process.env.PORT) || 3000;
 loadBook();

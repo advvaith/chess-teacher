@@ -581,7 +581,7 @@ const moveName = (p) => `${p.moveNumber}${p.color === "w" ? "." : "…"} ${descr
 const dot = (cls, sm) => `<span class="dot ${sm ? "sm" : ""} c-${cls}">${CLS[cls].sym}</span>`;
 
 async function loadKnownPatterns() {
-  state.knownPatterns = (await api("/api/profile").catch(() => ({ patterns: [] }))).patterns;
+  state.knownPatterns = (await api(`/api/profile?last=${recentWindow()}`).catch(() => ({ patterns: [] }))).patterns;
 }
 
 async function openGame(game, pending = false) {
@@ -1031,13 +1031,13 @@ function renderReview() {
     : (pats.length
         ? pats.map((p) => {
             const known = state.knownPatterns.find((k) => k.id === p.id);
-            const times = known?.games ?? 1;
-            return `<div class="pat"><div class="tt">${esc(p.name)} <span class="pill ${p.kind}">${p.kind}</span>${times > 1 ? `<span class="pill rec">seen in ${times} games</span>` : ""}</div>
+            const times = known?.games ?? 0;
+            return `<div class="pat"><div class="tt">${esc(p.name)} <span class="pill ${p.kind}">${p.kind}</span>${times > 1 ? `<span class="pill rec">${seenIn(known)}</span>` : ""}</div>
               <p>${esc(p.description)}</p>${p.in_this_game ? `<p><strong>In this game:</strong> ${esc(p.in_this_game)}</p>` : ""}<p class="advice">${esc(p.advice)}</p>
               <div class="plies">${p.plies.map((ply) => `<button class="chip" data-ply="${ply}">${esc(moveName(a.plies[ply - 1]))}</button>`).join("")}</div></div>`;
           }).join("")
         : `<p class="muted">${c.basic || c.notice ? "Pattern tracking needs the written review (a model and API key)." : "No clear patterns in this game."}</p>`) +
-      `<p><a href="#profile">See your patterns across all games →</a></p>`;
+      `<p><a href="#profile">See your patterns in your recent games →</a></p>`;
 }
 $("#comment").onclick = $("#tab-overview").onclick = $("#tab-patterns").onclick = (e) => {
   if (e.target.closest('[data-action="recoach"]')) {
@@ -1058,26 +1058,59 @@ function gameChip(o) {
   return `${r ? `<b class="t-${o.outcome === "win" ? "best" : o.outcome === "loss" ? "blunder" : "book"}">${r}</b> ` : ""}${who}`;
 }
 
+// How many recent games "My patterns" looks at (0 = all). Remembered in the browser.
+const WINDOWS = [5, 10, 20, 0];
+function recentWindow() {
+  try {
+    const n = Number(localStorage.getItem("recentGames") ?? 10);
+    return WINDOWS.includes(n) ? n : 10;
+  } catch {
+    return 10;
+  }
+}
+// "4 of your last 10 games", or "4 games" when looking at everything.
+const seenIn = (p) => (p.beforeOf ? `${p.games} of your last ${p.of} games` : `${p.games} game${p.games === 1 ? "" : "s"}`);
+// Whether a habit is showing up less or more than in the games just before these ones.
+function drift(p) {
+  if (!p.beforeOf || !p.of) return "";
+  const now = p.games / p.of;
+  const was = p.before / p.beforeOf;
+  if (Math.abs(now - was) < 0.15) return "";
+  const better = (now < was) === (p.kind === "weakness");
+  return `<span class="pill ${better ? "strength" : "weakness"}">${now < was ? "↓" : "↑"} was ${p.before} of ${p.beforeOf} before</span>`;
+}
+
 async function renderProfile() {
-  const { stats, patterns } = await api("/api/profile");
+  const win = recentWindow();
+  const { stats, patterns } = await api(`/api/profile?last=${win}`);
   const el = $("#profile");
   if (!stats.games) return (el.innerHTML = `<div class="card"><h1>My patterns</h1><p class="muted">Review a game first — your habits get tracked here from one game to the next.</p></div>`);
   const TAGS = { "hung-piece": "Left a piece hanging", "missed-capture": "Missed a free capture", "missed-mate": "Missed a forced mate", "allowed-mate": "Walked into a forced mate" };
   const PIECES = { p: "Pawn", n: "Knight", b: "Bishop", r: "Rook", q: "Queen", k: "King" };
   const maxPiece = Math.max(1, ...Object.values(stats.errorsByPiece));
   const patHtml = (kind) =>
-    patterns.filter((p) => p.kind === kind).map((p) => `<div class="pat"><div class="tt">${esc(p.name)} <span class="pill rec">${p.games} game${p.games === 1 ? "" : "s"}</span></div>
+    patterns.filter((p) => p.kind === kind && p.games).map((p) => `<div class="pat"><div class="tt">${esc(p.name)} <span class="pill rec">${seenIn(p)}</span>${drift(p)}</div>
       <p>${esc(p.description)}</p><p class="advice">${esc(p.advice)}</p>
-      <div class="plies">${p.occurrences.slice(0, 8).map((o) => `<a class="chip" href="#game/${esc(o.gameId)}" title="${esc(o.note ?? "")}">${gameChip(o)}</a>`).join("")}${p.occurrences.length > 8 ? `<span class="muted" style="font-size:12.5px;align-self:center">+ ${p.occurrences.length - 8} earlier</span>` : ""}</div></div>`).join("") || `<p class="muted">Nothing recorded yet.</p>`;
+      <div class="plies">${p.occurrences.slice(0, 8).map((o) => `<a class="chip" href="#game/${esc(o.gameId)}" title="${esc(o.note ?? "")}">${gameChip(o)}</a>`).join("")}${p.occurrences.length > 8 ? `<span class="muted" style="font-size:12.5px;align-self:center">+ ${p.occurrences.length - 8} earlier</span>` : ""}</div></div>`).join("") || `<p class="muted">${stats.window ? `Nothing in your last ${stats.games} games.` : "Nothing recorded yet."}</p>`;
+  // Habits on record that didn't show up in any of the games being looked at.
+  const gone = patterns.filter((p) => !p.games);
+  const goneHtml = (kind, title) => {
+    const list = gone.filter((p) => p.kind === kind);
+    return list.length
+      ? `<h3>${title}</h3><table class="plain gone">${list.map((p) => `<tr title="${esc(p.description)}"><td>${esc(p.name)}</td><td class="muted">last seen ${shortDate(p.lastSeen)} · ${p.total} game${p.total === 1 ? "" : "s"} in all</td></tr>`).join("")}</table>`
+      : "";
+  };
+  const scope = stats.window && stats.total > stats.games ? `your last ${stats.games} games` : `${stats.games} reviewed game${stats.games === 1 ? "" : "s"}`;
   el.innerHTML = `
-    <h1>My patterns</h1><p class="muted">Built from ${stats.games} reviewed game${stats.games === 1 ? "" : "s"}.</p>
+    <div class="profile-head"><div><h1>My patterns</h1><p class="muted">Built from ${scope}${stats.total > stats.games ? ` (of ${stats.total} reviewed)` : ""}${stats.window ? ", so a habit you fix drops off as you play" : ""}.</p></div>
+      <div class="seg" id="recentSeg">${WINDOWS.map((n) => `<button data-n="${n}" class="${n === win ? "on" : ""}">${n ? `Last ${n}` : "All"}</button>`).join("")}</div></div>
     <div class="stat-row">
       <div class="rcard"><div class="who">Typically play like</div><div class="big">~${stats.avgRating}</div></div>
       <div class="rcard"><div class="who">Average accuracy</div><div class="big">${stats.avgAccuracy}%</div></div>
       <div class="rcard"><div class="who">Record</div><div class="big">${stats.record.win}–${stats.record.loss}–${stats.record.draw}</div><div class="sub">wins – losses – draws</div></div>
     </div>
     <div class="review-grid" style="grid-template-columns:1fr 1fr">
-      <div><h3>Recurring weaknesses</h3>${patHtml("weakness")}<h3>Strengths</h3>${patHtml("strength")}</div>
+      <div><h3>Recurring weaknesses</h3>${patHtml("weakness")}${goneHtml("weakness", `Not seen in your last ${stats.games} games`)}<h3>Strengths</h3>${patHtml("strength")}${goneHtml("strength", "Strengths not seen lately")}</div>
       <div>
         <div class="card"><h2>Accuracy by phase</h2><div class="bars">
           ${["opening", "middlegame", "endgame"].filter((ph) => stats.phases[ph]).map((ph) => `<span>${ph[0].toUpperCase() + ph.slice(1)}</span><div class="track"><i style="width:${stats.phases[ph].accuracy}%"></i></div><span class="v">${stats.phases[ph].accuracy}%</span>`).join("")}
@@ -1089,11 +1122,19 @@ async function renderProfile() {
         <div class="card"><h2>Openings</h2><table class="plain"><tr><th>Opening</th><th>Games</th><th>W–L–D</th><th>Accuracy</th></tr>
           ${Object.entries(stats.openings).sort((x, y) => y[1].games - x[1].games).map(([name, o]) => `<tr><td>${esc(name)}</td><td>${o.games}</td><td>${o.win}–${o.loss}–${o.draw}</td><td>${o.accuracy}%</td></tr>`).join("")}
         </table></div>
-        <div class="card"><h2>Game by game</h2><table class="plain"><tr><th>Game</th><th>Played like</th><th>Accuracy</th></tr>
+        <div class="card"><h2>Game by game${stats.total > stats.games ? " (all)" : ""}</h2><table class="plain"><tr><th>Game</th><th>Played like</th><th>Accuracy</th></tr>
           ${stats.trend.map((t) => `<tr style="cursor:pointer" onclick="location.hash='game/${esc(t.id)}'"><td>${gameChip(t)}${t.played ? ` <span class="muted">· ${shortDate(t.date)}</span>` : ""}</td><td>~${t.rating}</td><td>${t.accuracy}%</td></tr>`).join("")}
         </table></div>
       </div>
     </div>`;
+  $("#recentSeg").onclick = (e) => {
+    const b = e.target.closest("[data-n]");
+    if (!b) return;
+    try {
+      localStorage.setItem("recentGames", b.dataset.n);
+    } catch {}
+    renderProfile();
+  };
 }
 
 // ------------------------------------------------------------------ boot

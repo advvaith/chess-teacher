@@ -987,6 +987,8 @@ function renderReview() {
   const oppName = (g.color === "w" ? g.players.black : g.players.white) || "Opponent";
   const myElo = g.ratings?.[g.color === "w" ? "white" : "black"];
   const oppElo = g.ratings?.[g.color === "w" ? "black" : "white"];
+  // The coach's sentence about the rating only makes sense next to the number it was written about.
+  const fresh = c?.ratingVersion === g.analysis.ratingVersion;
   const tag = (s, elo) => `<span class="meta">${elo ? `rated ${elo} · ` : ""}played like ~${s.rating} · ${s.accuracy}% accuracy</span>`;
   $("#topPlayer").innerHTML = `<span>${esc(oppName)} <span class="muted">(${g.color === "w" ? "Black" : "White"})</span></span>${tag(opp, oppElo)}`;
   $("#bottomPlayer").innerHTML = `<span>${esc(myName)} <span class="muted">(${g.color === "w" ? "White" : "Black"})</span></span>${tag(me, myElo)}`;
@@ -1004,11 +1006,11 @@ function renderReview() {
       <div class="rcard"><div class="who">You played like</div><div class="big">~${me.rating}</div>
         ${myElo ? `<div class="sub">actual rating ${myElo}</div>` : ""}
         <div class="sub">${me.accuracy}% accuracy · ${me.confidence} estimate${outcome ? ` · ${outcome}` : ""}</div>
-        <div class="sub">${phaseLine(me)}</div>${c?.student_rating_reason ? `<p>${esc(c.student_rating_reason)}</p>` : ""}</div>
+        <div class="sub">${phaseLine(me)}</div>${c?.student_rating_reason && fresh ? `<p>${esc(c.student_rating_reason)}</p>` : ""}</div>
       <div class="rcard"><div class="who">Opponent played like</div><div class="big">~${opp.rating}</div>
         ${oppElo ? `<div class="sub">actual rating ${oppElo}</div>` : ""}
         <div class="sub">${opp.accuracy}% accuracy · ${opp.confidence} estimate</div>
-        <div class="sub">${phaseLine(opp)}</div>${c?.opponent_rating_reason ? `<p>${esc(c.opponent_rating_reason)}</p>` : ""}</div>
+        <div class="sub">${phaseLine(opp)}</div>${c?.opponent_rating_reason && fresh ? `<p>${esc(c.opponent_rating_reason)}</p>` : ""}</div>
     </div>
     <p class="muted" style="font-size:12.5px;margin-top:-4px">"Played like" is an estimate from how closely each side's moves matched the engine in this one game. It swings a lot from game to game.</p>
     <h3>Opening</h3>
@@ -1070,16 +1072,24 @@ function recentWindow() {
 }
 // "4 of your last 10 games", or "4 games" when looking at everything.
 const seenIn = (p) => (p.beforeOf ? `${p.games} of your last ${p.of} games` : `${p.games} game${p.games === 1 ? "" : "s"}`);
-// Whether a habit is showing up less or more than in the games just before these ones.
+const spanName = (n) => (n ? `Last ${n}` : "All");
+const pct = (l) => (l.of ? l.games / l.of : 0);
+// How often a habit shows up over each span of games, shortest first, with the span being viewed marked.
+function levelRow(p, win) {
+  if (p.levels.length < 2) return "";
+  return `<div class="levels">${p.levels.map((l) => `<div class="${l.n === win ? "on" : ""}"><span>${spanName(l.n)}</span><b>${l.games}/${l.of}</b><i><u style="width:${Math.round(pct(l) * 100)}%"></u></i></div>`).join("")}</div>`;
+}
+// Is the habit showing up less or more in the latest games than over the long run?
 function drift(p) {
-  if (!p.beforeOf || !p.of) return "";
-  const now = p.games / p.of;
-  const was = p.before / p.beforeOf;
-  if (Math.abs(now - was) < 0.15) return "";
-  const better = (now < was) === (p.kind === "weakness");
-  return `<span class="pill ${better ? "strength" : "weakness"}">${now < was ? "↓" : "↑"} was ${p.before} of ${p.beforeOf} before</span>`;
+  if (p.levels.length < 2) return "";
+  const now = pct(p.levels[0]);
+  const long = pct(p.levels.at(-1));
+  if (Math.abs(now - long) < 0.2) return "";
+  const better = (now < long) === (p.kind === "weakness");
+  return `<span class="pill ${better ? "strength" : "weakness"}">${now < long ? "↓ less often lately" : "↑ more often lately"}</span>`;
 }
 
+const rec = (r) => `${r.win}–${r.loss}–${r.draw}`;
 async function renderProfile() {
   const win = recentWindow();
   const { stats, patterns } = await api(`/api/profile?last=${win}`);
@@ -1090,14 +1100,14 @@ async function renderProfile() {
   const maxPiece = Math.max(1, ...Object.values(stats.errorsByPiece));
   const patHtml = (kind) =>
     patterns.filter((p) => p.kind === kind && p.games).map((p) => `<div class="pat"><div class="tt">${esc(p.name)} <span class="pill rec">${seenIn(p)}</span>${drift(p)}</div>
-      <p>${esc(p.description)}</p><p class="advice">${esc(p.advice)}</p>
+      <p>${esc(p.description)}</p><p class="advice">${esc(p.advice)}</p>${levelRow(p, win)}
       <div class="plies">${p.occurrences.slice(0, 8).map((o) => `<a class="chip" href="#game/${esc(o.gameId)}" title="${esc(o.note ?? "")}">${gameChip(o)}</a>`).join("")}${p.occurrences.length > 8 ? `<span class="muted" style="font-size:12.5px;align-self:center">+ ${p.occurrences.length - 8} earlier</span>` : ""}</div></div>`).join("") || `<p class="muted">${stats.window ? `Nothing in your last ${stats.games} games.` : "Nothing recorded yet."}</p>`;
   // Habits on record that didn't show up in any of the games being looked at.
   const gone = patterns.filter((p) => !p.games);
   const goneHtml = (kind, title) => {
     const list = gone.filter((p) => p.kind === kind);
     return list.length
-      ? `<h3>${title}</h3><table class="plain gone">${list.map((p) => `<tr title="${esc(p.description)}"><td>${esc(p.name)}</td><td class="muted">last seen ${shortDate(p.lastSeen)} · ${p.total} game${p.total === 1 ? "" : "s"} in all</td></tr>`).join("")}</table>`
+      ? `<h3>${title}</h3><table class="plain gone">${list.map((p) => `<tr title="${esc(p.description)}"><td>${esc(p.name)}</td><td class="muted">last seen ${shortDate(p.lastSeen)} · ${p.levels.filter((l) => l.n === 0 || l.n > win).map((l) => `${l.games}/${l.of} ${l.n ? `in last ${l.n}` : "in all"}`).join(" · ")}</td></tr>`).join("")}</table>`
       : "";
   };
   const scope = stats.window && stats.total > stats.games ? `your last ${stats.games} games` : `${stats.games} reviewed game${stats.games === 1 ? "" : "s"}`;
@@ -1107,11 +1117,15 @@ async function renderProfile() {
     <div class="stat-row">
       <div class="rcard"><div class="who">Typically play like</div><div class="big">~${stats.avgRating}</div></div>
       <div class="rcard"><div class="who">Average accuracy</div><div class="big">${stats.avgAccuracy}%</div></div>
-      <div class="rcard"><div class="who">Record</div><div class="big">${stats.record.win}–${stats.record.loss}–${stats.record.draw}</div><div class="sub">wins – losses – draws</div></div>
+      <div class="rcard"><div class="who">Record</div><div class="big">${rec(stats.record)}</div><div class="sub">wins – losses – draws${stats.total > stats.games ? ` · last ${stats.games} games` : ""}</div>
+        ${stats.total > stats.games ? `<div class="sub">All ${stats.total} games: <b>${rec(stats.recordAll)}</b></div>` : ""}</div>
     </div>
     <div class="review-grid" style="grid-template-columns:1fr 1fr">
       <div><h3>Recurring weaknesses</h3>${patHtml("weakness")}${goneHtml("weakness", `Not seen in your last ${stats.games} games`)}<h3>Strengths</h3>${patHtml("strength")}${goneHtml("strength", "Strengths not seen lately")}</div>
       <div>
+        ${stats.levels.length > 1 ? `<div class="card"><h2>Recent form against the long run</h2><table class="plain form"><tr><th></th>${stats.levels.map((l) => `<th class="${l.n === win ? "on" : ""}">${spanName(l.n)}</th>`).join("")}</tr>
+          ${[["Record", (l) => rec(l.record)], ["Accuracy", (l) => `${l.accuracy}%`], ["Played like", (l) => `~${l.rating}`]].map(([name, f]) => `<tr><td>${name}</td>${stats.levels.map((l) => `<td class="${l.n === win ? "on" : ""}">${f(l)}</td>`).join("")}</tr>`).join("")}
+        </table></div>` : ""}
         <div class="card"><h2>Accuracy by phase</h2><div class="bars">
           ${["opening", "middlegame", "endgame"].filter((ph) => stats.phases[ph]).map((ph) => `<span>${ph[0].toUpperCase() + ph.slice(1)}</span><div class="track"><i style="width:${stats.phases[ph].accuracy}%"></i></div><span class="v">${stats.phases[ph].accuracy}%</span>`).join("")}
         </div></div>

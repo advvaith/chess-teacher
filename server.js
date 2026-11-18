@@ -7,6 +7,7 @@ import { analyzeGame } from "./lib/analyze.js";
 import { evaluateOne } from "./lib/engine.js";
 import { ChessComError, recentGames } from "./lib/chesscom.js";
 import { basicCoach, coachGame, extractMoves } from "./lib/coach.js";
+import { rerate } from "./lib/rating.js";
 import { annotate } from "./lib/explain.js";
 import { moveWords } from "./lib/facts.js";
 import { describeError, hasKey, listModels, PROVIDERS } from "./lib/llm.js";
@@ -118,6 +119,7 @@ app.post("/api/analyze", async (req, res) => {
       analysis,
       coach: null,
     };
+    rerate(game);
     annotate(game);
     saveGame(game);
     send({ type: "game", game });
@@ -125,6 +127,7 @@ app.post("/api/analyze", async (req, res) => {
     const llm = llmFor("coach");
     try {
       game.coach = await coachGame(game, patternsForCoach(game.id), llm);
+      game.coach.ratingVersion = game.analysis.ratingVersion;
       recordPatterns(game, game.coach.patterns);
     } catch (err) {
       console.error("coach failed:", describeError(err, llm.provider));
@@ -163,6 +166,7 @@ app.post("/api/games/:id/coach", async (req, res) => {
     const known = patternsForCoach(game.id);
     annotate(game);
     const coach = await coachGame(game, known, llm);
+    coach.ratingVersion = game.analysis.ratingVersion;
     // Only replace what was there once the new review has actually arrived.
     forgetGamePatterns(game.id);
     recordPatterns(game, coach.patterns);

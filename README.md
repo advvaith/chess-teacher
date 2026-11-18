@@ -60,7 +60,7 @@ There is no login. Anyone who can reach the app can read and delete your reviews
 ## How it works, and what to trust
 
 - The evaluations, move labels, accuracy, opening names and every move-by-move comment come from Stockfish and plain code. No language model is involved in those.
-- The "played like" rating is a hand-made curve from accuracy to rating, based on one game. It is a rough guide and tends to read low for strong players.
+- The "played like" rating starts from the player's real rating when it is known (chess.com imports) and moves part of the way toward what the game's accuracy suggests, further for long games. One game is a very noisy sample, so a 500-rated player's best game reads around 1500, not 2600. The accuracy-to-rating curve is measured around 500 and estimated elsewhere, so treat it as a rough guide. Without a real rating it leans on the accuracy alone.
 - The model only writes the game summary, turning points and habits. It is given the move comments and exact board facts (where every piece stands, what attacks what), and its text is checked against the board, with one correction pass. Language models are not strong chess players, so the summary can still occasionally describe an idea loosely. When it and the walkthrough disagree, believe the walkthrough.
 - Screenshot reading is checked by replaying the moves on a board: an illegal move is sent back to the model to re-read, and shown to you if it still can't be fixed.
 

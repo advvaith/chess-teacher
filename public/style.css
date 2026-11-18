@@ -238,3 +238,13 @@ a.chip { text-decoration: none; font-weight: 500; }
 .profile-head h1, .profile-head p { margin-bottom: 0; }
 table.gone td { font-size: 13.5px; }
 table.gone td:last-child { text-align: right; white-space: nowrap; }
+
+.levels { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px; }
+.levels > div { background: var(--panel-2); border: 1px solid transparent; border-radius: 8px; padding: 6px 8px; display: grid; gap: 3px; font-size: 12.5px; }
+.levels > div.on { border-color: var(--line); background: #181715; }
+.levels span { color: var(--muted); }
+.levels i { display: block; height: 4px; border-radius: 2px; background: rgba(255,255,255,.08); overflow: hidden; }
+.levels u { display: block; height: 100%; background: #5b8bb0; }
+table.form th, table.form td { text-align: right; }
+table.form th:first-child, table.form td:first-child { text-align: left; }
+table.form .on { font-weight: 700; color: var(--text); }
